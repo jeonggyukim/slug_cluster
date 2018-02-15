@@ -6,10 +6,11 @@
 
 export SLUG_DIR="/data/slug2"
 
+# set mass bins
 min=20
-max=30
+max=50
 step=2
-nproc=5 # number of threads
+nproc=5 # number of procs/threads
 curdir=$(pwd)
 
 cd $SLUG_DIR
