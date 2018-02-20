@@ -19,11 +19,11 @@ class slug_cluster(object):
     calculate integrated lumionosity, photon output rate, mean energy of
     photons in specified bands.
     """
-    def __init__(self,output_dir='/media/jgkim/data2/output_slug2',
+    def __init__(self,output_dir='/media/jgkim/data2/output_slug3',
                  model_base='cluster_logM',fmt='bin'):
 
         ## simulation and output parameters
-        self.logM_all = np.linspace(2.0,3.0,6)
+        self.logM_all = np.linspace(2.0,5.0,16)
         self.proc_all = range(5)              # number of threads (p0001...p000x)
         self.output_dir = output_dir
         
@@ -101,15 +101,16 @@ class slug_cluster(object):
 
         if verbose:
             print "[integrate_spec]: logM ",logM
-
+            
         fpkl = os.path.join(self.pkl_dir,self.model_base + "{0:02d}.p".format(int(10.0*logM)))
-        print fpkl
+
         # Check if pickle exists
         if not force_override and os.path.isfile(fpkl):
             self.out = pickle.load(open(fpkl,'rb'))
             for k in self.out.keys():
                 setattr(self,k,self.out[k])
-            print "[integrate_spec]: read from pickle {0:s}".format(fpkl)
+            if verbose:
+                print "[integrate_spec]: read from pickle {0:s}".format(fpkl)
             return self.out
         else:
             print "[integrate_spec]: {0:s} does not exist. Read SLUG2 output and integrate...".format(fpkl)

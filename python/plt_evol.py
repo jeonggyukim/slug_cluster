@@ -57,9 +57,9 @@ if __name__ == '__main__':
 
     cmap=mpl.cm.viridis
     norm=mpl.colors.Normalize(vmin=2.0,vmax=5.0)
-    #logM=[2.0,2.6,3.0,4.0,5.0]
-    logM=[2.2,2.4,2.6,2.8,3.0]
-    #logM=[2.4,2.6,3.0,4.0,5.0]
+    ##logM=[2.0,2.6,3.0,4.0,5.0]
+    ##logM=[2.2,2.4,2.6,2.8,3.0]
+    logM=[2.4,2.6,3.0,4.0,5.0]
     color=[cmap(norm(logM_)) for logM_ in logM]
     percentile=(10,90)
 
@@ -103,6 +103,6 @@ if __name__ == '__main__':
     
     plt.tight_layout()
     
-    savname=os.path.join(os.path.expanduser('~'),'Dropbox/Rad-slug-sim','Psi_Xi_hnu_evol_test.pdf')
+    savname=os.path.join(os.path.expanduser('~'),'Dropbox/Rad-slug-sim','Psi_Xi_hnu_evol.pdf')
     plt.savefig(savname,dpi=200)
 
