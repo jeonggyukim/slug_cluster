@@ -1,6 +1,6 @@
 ### slug_cluster
 
-Wrapper scripts for running SLUG2 simulations and calculating time evolution of light-to-mass conversion factors of coeval populations of star clusters.
+Scripts for running SLUG2 simulations and calculating time evolution of light-to-mass conversion factors of coeval populations of star clusters.
 
 * Step 1: Clone slug2 from [bitbucket repository](https://bitbucket.org/krumholz/slug2/) and compile. Minimum requirements are BOOST C++ and GSL libraries. Set SLUG_DIR environment variable to the slug installation directory.
 
