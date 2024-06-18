@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 import os
 import time
 import numpy as np
@@ -8,10 +9,10 @@ from collections import namedtuple
 from scipy import integrate
 from astropy import units as au
 from astropy import constants as ac
-import cPickle as pickle
+import pickle
 
 # slugpy should be added to the PYTHONPATH environment variable
-from slugpy import read_cluster_spec,read_cluster_phot,read_cluster_prop
+from slugpy import read_cluster_spec, read_cluster_phot, read_cluster_prop
 
 class slug_cluster(object):
     """Data analysis routines for SLUG2 cluster simulation spec output
@@ -19,17 +20,17 @@ class slug_cluster(object):
     calculate integrated lumionosity, photon output rate, mean energy of
     photons in specified bands.
     """
-    def __init__(self,output_dir='/media/jgkim/data2/output_slug3',
-                 model_base='cluster_logM',fmt='bin'):
+    def __init__(self,output_dir='/tigress/jk11/slug_cluster_data',
+                 model_base='cluster_logM', fmt='bin', nproc=5):
 
         ## simulation and output parameters
         self.logM_all = np.linspace(2.0,5.0,16)
-        self.proc_all = range(5)              # number of threads (p0001...p000x)
+        self.proc_all = range(nproc)              # number of threads (p0001...p000x)
         self.output_dir = output_dir
-        
+
         self.model_base = model_base
         self.fmt = fmt
-        
+
         # physical units and constants
         self.Angs = (1.0*au.Angstrom).cgs.value
         self.hc = (1.0*(ac.h*ac.c).cgs).value
@@ -47,27 +48,28 @@ class slug_cluster(object):
         self.pkl_dir = os.path.join(output_dir,'pickle')
         if not os.path.exists(self.pkl_dir):
             os.makedirs(self.pkl_dir)
-           
-    def read_cluster(self,logM=None,proc=None,verbose=False):
+
+    def read_cluster(self, logM=None, proc=None, verbose=False):
         """
         Read one set of output files for given logM and proc
         """
 
         self.set_logM_proc(logM,proc)
         if verbose:
-            time0=time.time()
-        self.spec=read_cluster_spec(self.model_name,output_dir=self.output_dir,fmt=self.fmt)
-        self.phot=read_cluster_phot(self.model_name,output_dir=self.output_dir,fmt=self.fmt)
-        self.prop=read_cluster_prop(self.model_name,output_dir=self.output_dir,fmt=self.fmt)
+            time0 = time.time()
+        self.spec = read_cluster_spec(self.model_name, output_dir=self.output_dir, fmt=self.fmt)
+        self.phot = read_cluster_phot(self.model_name, output_dir=self.output_dir, fmt=self.fmt,
+                                      nofilterdata=True)
+        self.prop = read_cluster_prop(self.model_name, output_dir=self.output_dir, fmt=self.fmt)
         if verbose:
-            print '[read_cluster]: {:.2f} s'.format(time.time()-time0)
+            print('[read_cluster]: {:.2f} s'.format(time.time()-time0))
 
-        self.target_mass=self.prop.target_mass[0]
-        self.trials=np.unique(self.phot.trial)
-        self.ntrial=len(self.trials)
-        self.ntime=np.argwhere(self.phot.trial == 1).shape[0]
-        self.time=self.phot.time[0:self.ntime]
-        self.wl=self.spec.wl
+        self.target_mass = self.prop.target_mass[0]
+        self.trials = np.unique(self.phot.trial)
+        self.ntrial = len(self.trials)
+        self.ntime = np.argwhere(self.phot.trial == 1).shape[0]
+        self.time = self.phot.time[0:self.ntime]
+        self.wl = self.spec.wl
 
         ## Find band edge indices
         ## 1. band edges are not carefully taken care of.
@@ -76,7 +78,7 @@ class slug_cluster(object):
         ## but it should be good enough for our purposes.
         for k,(wl1,wl2) in self.wl_lim.items():
             self.wl_lim_indx[k] = (np.argwhere(self.wl > wl1)[0][0],
-                                   np.argwhere(self.wl < wl2)[-1][0]+1)
+                                   np.argwhere(self.wl < wl2)[-1][0] + 1)
 
     def set_logM_proc(self,logM=None,proc=None):
         if logM is not None:
@@ -84,52 +86,111 @@ class slug_cluster(object):
         if proc is not None:
             self.proc = proc
         self.model_name = self.model_base + \
-          '{0:02d}_p{1:05d}_n00000_0000'.format(int(10.0*self.logM),self.proc)
+          '{0:02d}_p{1:05d}_n00000_0000'.format(int(10.0*self.logM), self.proc)
 
     def set_trial(self,trial):
         """
-        1 <=  trial <= ntrial 
+        1 <=  trial <= ntrial
         """
-        
+
         # index range of this trial
         ii = int((trial-1)*self.ntime)
         ie = int((trial)*self.ntime)
         self.phot_ = self.phot.phot[ii:ie,:]
         self.spec_ = self.spec.spec[ii:ie,:]
 
-    def integrate_spec(self,logM,force_override=False,verbose=False):
+    def get_sed_med_avg(self, force_override=False, verbose=False):
 
-        if verbose:
-            print "[integrate_spec]: logM ",logM
-            
-        fpkl = os.path.join(self.pkl_dir,self.model_base + "{0:02d}.p".format(int(10.0*logM)))
+        fpkl = os.path.join(self.pkl_dir,
+                            self.model_base + "_sed_med_avg.p")
 
         # Check if pickle exists
         if not force_override and os.path.isfile(fpkl):
-            self.out = pickle.load(open(fpkl,'rb'))
+            if verbose:
+                print('Read from pickle:{:s}'.format(fpkl))
+            return pickle.load(open(fpkl,'rb'))
+
+        sed_med = dict()
+        sed_avg = dict()
+        ntrial = dict()
+
+        #for i, logM in enumerate([3.0, 5.0]):
+        for i, logM in enumerate(self.logM_all):
+            self.get_sed(logM=logM)
+            sed_avg['logM{0:02d}'.format(int(logM*10.))] = np.average(self.sed, axis=0)
+            sed_med['logM{0:02d}'.format(int(logM*10.))] = np.median(self.sed, axis=0)
+            ntrial['logM{0:02d}'.format(int(logM*10.))] = self.ntrial
+
+        out = dict(sed_avg=sed_avg, sed_med=sed_med, wl=self.spec.wl, time=self.time,\
+                   ntrial=ntrial, ntime=self.ntime)
+
+        with open(fpkl,'wb') as f:
+            pickle.dump(out, f, pickle.HIGHEST_PROTOCOL)
+
+        return out
+
+    def get_sed(self, logM):
+
+        print('logM{:02d} proc: '.format(int(10.0*logM)), end=' ')
+
+        for i, proc in enumerate(self.proc_all):
+            print(proc, end=' ')
+            self.set_logM_proc(logM, proc)
+            self.prop = read_cluster_prop(self.model_name, output_dir=self.output_dir, fmt=self.fmt)
+            self.phot = read_cluster_phot(self.model_name, output_dir=self.output_dir, fmt=self.fmt,
+                                          nofilterdata=True)
+            self.spec = read_cluster_spec(self.model_name, output_dir=self.output_dir, fmt=self.fmt)
+            trial = np.unique(self.spec.trial)
+            self.ntrial = len(trial)
+            self.ntime = self.spec.spec.shape[0] // self.ntrial
+            self.time = self.phot.time[0:self.ntime]
+            sed_ = np.reshape(self.spec.spec, (self.ntrial, self.ntime, self.spec.wl.size))
+            sed_ = sed_ / self.prop.target_mass[0]
+            if i == 0:
+                self.sed = sed_
+            else:
+                self.sed = np.vstack((self.sed, sed_))
+
+            # if i >= 0: # for test
+            #     break
+
+        print(' ')
+        return self.time, self.spec.wl, self.sed
+
+    def integrate_spec(self,logM,force_override=False,verbose=False):
+
+        if verbose:
+            print("[integrate_spec]: logM ", logM)
+
+        fpkl = os.path.join(self.pkl_dir, self.model_base + "{0:02d}.p".format(int(10.0*logM)))
+
+        # Check if pickle exists
+        if not force_override and os.path.isfile(fpkl):
+            self.out = pickle.load(open(fpkl,'rb'), encoding='latin1')
             for k in self.out.keys():
                 setattr(self,k,self.out[k])
             if verbose:
-                print "[integrate_spec]: read from pickle {0:s}".format(fpkl)
+                print("[integrate_spec]: read from pickle {0:s}".format(fpkl))
             return self.out
         else:
-            print "[integrate_spec]: {0:s} does not exist. Read SLUG2 output and integrate...".format(fpkl)
+            print("[integrate_spec]: {0:s} does not exist. Read SLUG2 output and integrate...".format(fpkl))
 
-            
-        # pickle does not exists
 
-        append=False
+        # pickle does not exist
+
+        append = False
         #for proc in (0,): # for test
         for proc in self.proc_all:
-            print 'proc',proc
+            print('proc', proc)
             self.set_logM_proc(logM,proc)
             self.read_cluster(verbose=verbose)
             self.integrate_spec_trials(integrate_method='trapz',
                                        append=append,verbose=verbose)
-            append=True
+            #break
+            append = True
 
         # calculate total number of trials
-        self.ntrial_tot = self.L[self.bands[0]].shape[0]
+        self.ntrial_tot = self.L[list(self.bands)[0]].shape[0]
 
         # compute median values
         self.L_med = dict()
@@ -140,16 +201,16 @@ class slug_cluster(object):
 
         self.Lbol_med = np.median(self.Lbol,axis=0)
         self.Psibol_med = np.median(self.Lbol,axis=0)
-        
+
         for k in self.bands:
             self.L_med[k] = np.median(self.L[k],axis=0)
             self.Q_med[k] = np.median(self.Q[k],axis=0)
             self.hnu_med[k] = np.median(self.hnu[k],axis=0)
-            
+
             self.Psi_med[k] = self.L_med[k]/self.target_mass
             self.Xi_med[k] = self.Q_med[k]/self.target_mass
-            
-            
+
+
         # Build dictionary to hold output
         keys = ['ntrial_tot', 'time', 'bands', 'target_mass', 'ntime',
                 'Lbol', 'L', 'Q', 'hnu',
@@ -158,15 +219,18 @@ class slug_cluster(object):
 
         out = dict()
         for k in keys:
-            out[k] = getattr(self,k)
-        
+            if k == 'bands':
+                out[k] = list(getattr(self, k))
+            else:
+                out[k] = getattr(self,k)
+
         with open(fpkl,'wb') as f:
             pickle.dump(out,f,pickle.HIGHEST_PROTOCOL)
 
         return out
-        
-    def integrate_spec_trials(self,integrate_method='trapz',
-                              append=False,verbose=False):
+
+    def integrate_spec_trials(self, integrate_method='trapz',
+                              append=False, verbose=False):
 
         if not append:
             self.Lbol = dict()
@@ -175,17 +239,17 @@ class slug_cluster(object):
             self.hnu = dict()
 
         if verbose:
-            print 'ntrial:',self.ntrial
-            print 'trials:',
-            
-        #for i,ii in enumerate((1,2,3,5,6,7,8,9,10)): # for test 
+            print('ntrial:', self.ntrial)
+            print('trials:', end=' ')
+
+        # for i,ii in enumerate((1,2,3,5,6,7,8,9,10)):
         for i,ii in enumerate(self.trials):
             if verbose:
-                print ii,
+                print(ii, end=' ')
 
             self.set_trial(ii)
             self.integrate_spec_one_trial(integrate_method=integrate_method)
-            
+
             # save results to L,Q,hnu
             if i == 0 and not append:
                 self.Lbol = self.Lbol_
@@ -202,10 +266,10 @@ class slug_cluster(object):
                     self.hnu[k] = np.vstack((self.hnu[k],self.hnu_[k]))
 
         if verbose:
-            print ""
-            print ""
+            print("")
+            print("")
 
-    def integrate_spec_one_trial(self,integrate_method='trapz'):
+    def integrate_spec_one_trial(self, integrate_method='trapz'):
         """Analyze spec with one trial
         integrate_method: 'trapz' or 'simps'
         """
@@ -215,7 +279,7 @@ class slug_cluster(object):
         integrator = integrators[integrate_method]
 
         self.Lbol_ = np.zeros(self.ntime)
-        
+
         self.L_ = dict()
         self.Q_ = dict()
         self.hnu_ = dict()
@@ -224,7 +288,7 @@ class slug_cluster(object):
             self.Q_[k] = np.zeros(self.ntime)
 
         # loop over time
-        wl=self.wl
+        wl = self.wl
         for j in range(self.ntime):
             s = self.spec_[j,:]
             # Bolometric
@@ -249,7 +313,6 @@ if __name__ == '__main__':
     force_override=True
     sc = slug_cluster()
     for logM in sc.logM_all:
-        print '[main]: logM',logM
+        print('[main]: logM', logM)
         sc = slug_cluster()
-        sc.integrate_spec(logM=logM,force_override=force_override,verbose=True)
-
+        sc.integrate_spec(logM=logM, force_override=force_override, verbose=True)
